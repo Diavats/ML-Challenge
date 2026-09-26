@@ -112,6 +112,20 @@ All features are **language-independent** (string similarity and agree/conflict 
 - For singletons, the score becomes `1 − weighted false matches`, a linear estimate of "no false match".
 - The threshold is re-chosen on this corrected macro F0.5.
 
+**Corrected sweep (v1 model):**
+
+| t | 0.30 | 0.40 | **0.45** | **0.50** | **0.55** | 0.65 | 0.80 |
+|---|---|---|---|---|---|---|---|
+| corrected F0.5 | 0.9625 | 0.9654 | 0.9736 | 0.9725 | 0.9714 | 0.9678 | 0.9589 |
+
+- 0.45–0.55 is a plateau: one under-sampled false match moves the score by about 0.0045, so these are statistically tied.
+- **We chose t = 0.50**, the middle of the plateau and slightly on the precision side because France is unseen.
+
+**Submission v1** (t = 0.50):
+- 6,138,289 links.
+- 1,651,318 of 1,732,544 test S1 have a match. 4.7% are empty, vs 5.6% singletons in train, which is plausible.
+- The validator passes with `--check-ids`. Logged in `submissions/log.tsv`.
+
 Leaderboard submissions are logged in `submissions/log.tsv`.
 
 ## 5. Engineering notes

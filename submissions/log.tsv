@@ -1,0 +1,2 @@
+version	date	holdout_f05_corrected	threshold	links	s1_with_match	lb_score	notes
+v1	2026-09-27 01:40	0.9725	0.50	6138289	1651318	(pending)	LightGBM 1379 trees, K=10 address-key blocking, 5% sample training

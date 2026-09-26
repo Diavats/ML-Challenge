@@ -7,3 +7,5 @@ __pycache__/
 .ipynb_checkpoints/
 *.log
 logs/
+submissions/*.tsv
+!submissions/log.tsv
