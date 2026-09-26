@@ -1,0 +1,8 @@
+# big data files never go into git
+*.zip
+student_resource/dataset/
+data/
+output/
+__pycache__/
+.ipynb_checkpoints/
+*.log
