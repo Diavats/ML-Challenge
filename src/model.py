@@ -58,14 +58,18 @@ def train(sample):
     H = set(sampled[pd.util.hash_array(sampled.values) % 5 == 0])
     true_s1 = df["id"].map(pairs.set_index("id")["s1"])
     hold_q = true_s1.isin(H) | (~true_s1.isin(set(sampled)) & (pd.util.hash_array(df["id"].values) % 5 == 0))
+    # Weights: records that belong to NON-sampled businesses (other S1s' records, decoys) were
+    # kept at only `sample` of their real rate, but on test they are all there. They are the
+    # "looks similar but isn't" cases, so weight each one 1/sample to match the real test mix.
+    df["w"] = np.where(true_s1.isin(set(sampled)), 1.0, 1.0 / sample)
     tr, ho = df[~hold_q & ~df["s1"].isin(H)], df[hold_q].copy()
     print(f"pairs: train {len(tr):,} (pos {tr['y'].mean():.3f}), holdout {len(ho):,}")
 
     model = lgb.train(
         dict(objective="binary", learning_rate=0.05, num_leaves=127, min_data_in_leaf=100,
              feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, verbose=-1),
-        lgb.Dataset(tr[ALL_FEATS], tr["y"]), num_boost_round=2000,
-        valid_sets=[lgb.Dataset(ho[ALL_FEATS], ho["y"])],
+        lgb.Dataset(tr[ALL_FEATS], tr["y"], weight=tr["w"]), num_boost_round=2000,
+        valid_sets=[lgb.Dataset(ho[ALL_FEATS], ho["y"], weight=ho["w"])],
         callbacks=[lgb.early_stopping(50), lgb.log_evaluation(100)])
     ho["p"] = model.predict(ho[ALL_FEATS])
     imp = pd.Series(model.feature_importance("gain"), ALL_FEATS).sort_values(ascending=False)
@@ -105,7 +109,11 @@ def tune(sample):
         f = 1.25 * df["tp"] / (1.25 * df["tp"] + 0.25 * fn + df["fp"]).where(lambda x: x > 0, 1)
         f[df["n_true"] == 0] = 1 - df.loc[df["n_true"] == 0, "fp"]
         rows.append((t, f.mean(), (df["fp"] > 0).mean()))
-    best_t = max(rows, key=lambda r: r[1])[0]
+    # One under-sampled false match moves the score by ~0.005, so single points are noisy.
+    # Pick the threshold whose average with its two neighbours is highest (centre of the plateau).
+    scores = [s for _, s, _ in rows]
+    smooth = [np.mean(scores[max(i - 1, 0):i + 2]) for i in range(len(scores))]
+    best_t = rows[int(np.argmax(smooth))][0]
     for t, s, fpr in rows:
         print(f"  threshold {t:.2f}: corrected macro F0.5 = {s:.4f}  (S1s with a false match: "
               f"{fpr:.3f}){'  <- best' if t == best_t else ''}")
@@ -118,7 +126,9 @@ def write_list(pairs, s1_ids, col, path):
     lists = pairs.groupby("s1")["id"].agg(lambda x: ",".join(sorted(set(x))))
     out = pd.DataFrame({"source1_entity_id": s1_ids})
     out[col] = out["source1_entity_id"].map(lists).fillna("")
-    out.to_csv(path, sep="\t", index=False)
+    # "\n" line endings: on Windows pandas writes "\r\n", and the stray "\r" would stick to
+    # the header and to the last ID of every row when the portal reads the file on Linux.
+    out.to_csv(path, sep="\t", index=False, lineterminator="\n")
 
 
 def predict():
@@ -168,17 +178,33 @@ def candidates(buckets=8):
     """candidate_pairs.tsv = every pair the model scored. Built bucket by bucket
     (S1s split by hash) so the ~100M pairs never sit in memory at once."""
     s1_ids = read_norm("test", 1, ["id"])["id"]
-    files = sorted(SCORED.glob("*.parquet"))
-    lists = []
-    for b in range(buckets):
-        part = pd.concat([d[pd.util.hash_array(d["s1"].values) % buckets == b]
-                          for d in (pd.read_parquet(f, columns=["s1", "id"]) for f in files)])
-        lists.append(part.groupby("s1")["id"].agg(lambda x: ",".join(sorted(set(x)))))
-        print(f"  bucket {b + 1}/{buckets}", flush=True)
-    out = pd.DataFrame({"source1_entity_id": s1_ids})
-    out["candidate_entity_ids"] = out["source1_entity_id"].map(pd.concat(lists)).fillna("")
-    out.to_csv(OUT / "candidate_pairs.tsv", sep="\t", index=False)
-    print("wrote", OUT / "candidate_pairs.tsv")
+    # Pass 1: read every scored file ONCE and split its pairs into bucket files by S1 hash
+    # (all pairs of one S1 land in the same bucket).
+    tmp = DATA / "cand_buckets"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir()
+    for n, f in enumerate(sorted(SCORED.glob("*.parquet"))):
+        d = pd.read_parquet(f, columns=["s1", "id"])
+        bucket = pd.util.hash_array(d["s1"].values) % buckets
+        for b in range(buckets):
+            d[bucket == b].to_parquet(tmp / f"b{b}_{n:03}.parquet", index=False)
+    done = set()                              # S1s already written
+    with open(OUT / "candidate_pairs.tsv", "w", encoding="utf-8", newline="\n") as out:
+        out.write("source1_entity_id\tcandidate_entity_ids\n")
+        for b in range(buckets):
+            # Pass 2: one bucket at a time, so only 1/8 of the pairs is in memory
+            part = pd.concat([pd.read_parquet(f) for f in sorted(tmp.glob(f"b{b}_*.parquet"))])
+            lists = part.groupby("s1")["id"].agg(lambda x: ",".join(sorted(set(x))))
+            for s1, ids in lists.items():     # write this bucket's rows right away
+                out.write(f"{s1}\t{ids}\n")
+            done.update(lists.index)
+            print(f"  bucket {b + 1}/{buckets}: {len(lists):,} S1 written", flush=True)
+            del part, lists
+        # S1s that got no candidates at all still need a row (empty list)
+        empty = [s for s in s1_ids if s not in done]
+        out.writelines(f"{s}\t\n" for s in empty)
+    shutil.rmtree(tmp)                        # bucket files are temporary
+    print(f"wrote {OUT / 'candidate_pairs.tsv'}: {len(done):,} with candidates, {len(empty):,} empty")
 
 
 if __name__ == "__main__":
