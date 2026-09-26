@@ -105,7 +105,12 @@ All features are **language-independent** (string similarity and agree/conflict 
 | Run | Holdout macro F0.5 | Note |
 |---|---|---|
 | v0: sample-only index (5% of S1) | 0.967 @ t=0.65 | **Not trusted.** The index was 20× less crowded than on test, so blocking features looked too easy. |
-| v1: full index, address keys | *(pending, see logs/train.log)* | |
+| v1: full index, address keys, LightGBM 1,379 trees | 0.9791 @ t=0.20 (raw) | Top features: blocking rank, relative blocking score, address token-set, name ratio, address-number Jaccard, phonetic ratio. **The raw threshold is biased low; see below.** |
+
+**Threshold bias found in v1.** The holdout contains every record of the held-out S1s, but records belonging to *other* businesses (the source of false matches) appear at only about 1% of their real rate (5% sample × 1/5 holdout). So false matches are under-counted about 100×, and the raw sweep picks a threshold that is too loose (0.20, at the edge of the grid).
+- **Fix (`python -m src.model tune`):** each false match coming from an under-sampled record counts `w = 5 / sample = 100` times.
+- For singletons, the score becomes `1 − weighted false matches`, a linear estimate of "no false match".
+- The threshold is re-chosen on this corrected macro F0.5.
 
 Leaderboard submissions are logged in `submissions/log.tsv`.
 

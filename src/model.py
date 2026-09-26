@@ -68,23 +68,49 @@ def train(sample):
         valid_sets=[lgb.Dataset(ho[ALL_FEATS], ho["y"])],
         callbacks=[lgb.early_stopping(50), lgb.log_evaluation(100)])
     ho["p"] = model.predict(ho[ALL_FEATS])
-
-    # score on every S1 in H, including those with zero candidates
-    best = best_per_query(ho)
-    truth = as_sets(pairs[pairs["s1"].isin(H)])
-    scores = {}
-    for t in [round(t, 2) for t in np.arange(0.2, 0.96, 0.05)]:
-        pred = as_sets(best[(best["p"] >= t) & best["s1"].isin(H)])
-        scores[t] = macro_f05(pred, truth, list(H))
-    best_t = max(scores, key=scores.get)
-    for t, s in scores.items():
-        print(f"  threshold {t:.2f}: macro F0.5 = {s:.4f}{'  <- best' if t == best_t else ''}")
-
     imp = pd.Series(model.feature_importance("gain"), ALL_FEATS).sort_values(ascending=False)
     print("top features:", ", ".join(imp.index[:8]))
     model.save_model(str(DATA / "model.txt"))
+    # keep the holdout predictions so the threshold can be re-tuned without retraining
+    best_per_query(ho).assign(own=lambda d: d["id"].map(pairs.set_index("id")["s1"]).isin(H)) \
+        .to_parquet(DATA / "holdout_best.parquet", index=False)
+    pd.Series(sorted(H)).to_frame("s1").to_parquet(DATA / "holdout_s1.parquet", index=False)
+    tune(sample)
+
+
+def tune(sample):
+    """Pick the threshold on the holdout, correcting for sampling.
+
+    Holdout queries whose true S1 is in H are all present. Every OTHER query (other S1s'
+    records, decoys) is present at only ~sample * 1/5 of its real rate - and those are exactly
+    the records that create false matches. So each false match from such a query counts
+    w = 1 / (sample / 5) times. Singletons: score = 1 - (weighted false matches), the
+    linear estimate of "no false match at all"."""
+    best = pd.read_parquet(DATA / "holdout_best.parquet")
+    H = pd.read_parquet(DATA / "holdout_s1.parquet")["s1"]
+    _, pairs = read_truth()
+    truth = pairs[pairs["s1"].isin(set(H))].groupby("s1").size()
+    true_link = set(zip(pairs["s1"], pairs["id"]))
+    w = 5 / sample
+    rows = []
+    for t in [round(t, 2) for t in np.arange(0.05, 0.96, 0.05)]:
+        b = best[(best["p"] >= t) & best["s1"].isin(set(H))].copy()
+        b["tp"] = [(s, i) in true_link for s, i in zip(b["s1"], b["id"])]
+        own = b[b["own"]].groupby("s1")["tp"].agg(lambda x: (~x).sum())   # wrong, fully sampled
+        other = b[~b["own"]].groupby("s1").size()                           # wrong, under-sampled
+        df = pd.DataFrame({"n_true": truth}).reindex(H).fillna(0)
+        df["tp"] = b.groupby("s1")["tp"].sum().reindex(df.index).fillna(0)
+        df["fp"] = own.reindex(df.index).fillna(0) + w * other.reindex(df.index).fillna(0)
+        fn = df["n_true"] - df["tp"]
+        f = 1.25 * df["tp"] / (1.25 * df["tp"] + 0.25 * fn + df["fp"]).where(lambda x: x > 0, 1)
+        f[df["n_true"] == 0] = 1 - df.loc[df["n_true"] == 0, "fp"]
+        rows.append((t, f.mean(), (df["fp"] > 0).mean()))
+    best_t = max(rows, key=lambda r: r[1])[0]
+    for t, s, fpr in rows:
+        print(f"  threshold {t:.2f}: corrected macro F0.5 = {s:.4f}  (S1s with a false match: "
+              f"{fpr:.3f}){'  <- best' if t == best_t else ''}")
     (DATA / "threshold.txt").write_text(str(best_t))
-    print(f"saved model, threshold={best_t}, holdout macro F0.5={scores[best_t]:.4f} on {len(H):,} S1")
+    print(f"threshold={best_t} saved on {len(H):,} holdout S1")
 
 
 def write_list(pairs, s1_ids, col, path):
@@ -154,6 +180,8 @@ if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "train":
         train(float(sys.argv[sys.argv.index("--sample") + 1]))
+    elif cmd == "tune":
+        tune(float(sys.argv[sys.argv.index("--sample") + 1]))
     elif cmd == "predict":
         predict()
     elif cmd == "submit":
