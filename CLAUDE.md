@@ -37,24 +37,39 @@
   - French abbreviations (r = rue, av, bd, all = allée)
 
 ## Layout
-- `student_resource/`: the extracted challenge files (the dataset is gitignored). Use the README, the validator `utils/validate_submission.py`, and `Documentation_template.md`.
-- `src/load.py`: `read_tsv`, `read_source(split, n)`, `read_truth()` → (s1 table, flat pairs `s1,id`).
-- `src/normalize.py`: step 1. Turns raw text into the columns `name legal nosp phon addr state house street nums`.
-  - Word maps (`LEGAL`, `ABBR`, state tables) are at the top of the file.
-  - `norm_name`, `norm_addr`, and `normalize_df` (multiprocessing).
-  - `_check()` is the self-test.
-- `data/`: gitignored cache. Holds `{train,test}_s{1,2,3}.parquet`, the normalized sources.
+- `METHODOLOGY.md`: **the decision log with real numbers.** Read it first; update it after every experiment.
+- `student_resource/`: the challenge files (dataset gitignored). Contains README, `utils/validate_submission.py` and `Documentation_template.md`.
+- `src/load.py`: paths (env overrides `ER_RAW`, `ER_DATA`, `ER_OUT`), `read_source`, `iter_norm` / `read_norm` (parquet in batches), `read_truth()` → (s1 table, pairs `s1,id`).
+- `src/normalize.py`: raw text → `name legal nosp phon addr state house street nums`.
+  - Word maps are at the top; `norm_name` / `norm_addr`; `--check` self-test.
+- `src/blocking.py`: `record_keys` (the blocking keys) and `build_index(s1)` / `query(index, q)`.
+  - Uses TF-IDF cosine, top K=10 per S2/S3.
+  - `load(split, sample)` builds the full S1 index with sampled queries (realistic evaluation).
+- `src/features.py`: `pair_features` (17 similarity features) and `build(cand, s1, q)` (adds context features); `ALL_FEATS`.
+- `src/model.py`: `train --sample`, `predict` (streaming test run), `submit <t>` (re-threshold), `candidates` (candidate_pairs.tsv).
+- `src/evaluate.py`: the official macro F0.5.
+- `data/` (gitignored):
+  - `{split}_s{n}.parquet`: normalized sources
+  - `cand_*.parquet`: blocking output
+  - `model.txt`, `threshold.txt`
+  - `scored_test/`, `best_test.parquet`
+- `logs/` (gitignored): run logs. `output/`: submission files.
 
-## Commands
-```bash
-python -m src.normalize --check   # self-test
-python -m src.normalize           # all 6 files -> data/*.parquet (~20 min on laptop)
+## Commands (PowerShell 5.1 on the laptop: no `&&`)
+```
+python -m src.normalize --check; python -m src.features; python -m src.evaluate   # self-tests
+python -m src.blocking train --sample 0.05     # blocking recall report
+python -m src.model train --sample 0.05        # train + threshold table
+python -m src.model predict                    # full test, streamed (hours on laptop)
+python -m src.model submit 0.65                # re-threshold, no recompute
+python student_resource/utils/validate_submission.py --matching output/matching_results.tsv --test-dir student_resource/dataset/test
 ```
 
 ## Compute
-- The laptop has 7.8 GB RAM and no GPU. Use it for coding and samples only.
-- Full runs happen on a SageMaker notebook (`ml.r5.2xlarge`, 64 GB) in Dia's account. Claude has no AWS access, so give her the steps.
+- Laptop: 7.8 GB RAM, 8 CPUs. The streaming pipeline fits; run long jobs in the background with a log in `logs/`.
+- SageMaker: the large-instance quota is 0 (Paid plan; increase requested). Claude has no AWS access, so give Dia the steps. The same code runs there via `git clone`.
+- GitHub: https://github.com/Diavats/ML-Challenge (keep it private during the challenge).
 
 ## How to read this codebase
-- Read the one function you need, e.g. `norm_addr` in `src/normalize.py`, not whole files.
-- The plan lives at `~/.claude/plans/c-users-lenovo-downloads-ps-amazon-ml-c-vectorized-teacup.md`.
+- Read the one function you need, not whole files.
+- Status and next steps are in `METHODOLOGY.md` §4–6 and the plan at `~/.claude/plans/c-users-lenovo-downloads-ps-amazon-ml-c-vectorized-teacup.md`.
