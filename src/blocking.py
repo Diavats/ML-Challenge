@@ -19,21 +19,31 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 from scipy.sparse import csr_matrix, diags
+from sklearn.preprocessing import normalize
 
-from src.load import DATA, read_truth
+from src.load import DATA, read_norm, read_truth
 
 K = 10            # candidates kept per S2/S3 record
 MAX_DF = 2000     # keys shared by more S1s than this are too common to be useful
 CHUNK = 50_000    # queries per sparse product (lower it if RAM is short)
-COLS = ["id", "country", "name", "nosp", "phon", "house", "street"]
+COLS = ["id", "country", "name", "nosp", "phon", "house", "street", "addr"]
 
 
-def record_keys(name, nosp, phon, house, street):
+def record_keys(name, nosp, phon, house, street, addr):
     """The blocking keys of one record. Prefixes (t:, p:, ...) keep key types apart."""
-    keys = {"t:" + w for w in name.split() if len(w) >= 3}      # rare name words
+    # address words and 3+ digit numbers: "kawadewadi", "panchsheel", "1801".
+    # Without these, a same-name business in another city outranked the true match.
+    keys = {"w:" + w for w in addr.split() if len(w) >= 3}
+    keys |= {"t:" + w for w in name.split() if len(w) >= 3}     # rare name words
     keys |= {"p:" + w for w in phon.split() if len(w) >= 2}     # sound-alike words (Hindi)
+    # whole-name keys: "oncology medicine" has common words but is a rare full name
+    if nosp:
+        keys.add("n:" + nosp)                                    # exact name, spaces ignored
+    if len(phon) >= 3:
+        keys.add("q:" + phon.replace(" ", ""))                   # "lakshmi it" ~ "lksmi aiti"
     if len(nosp) >= 5:
         keys.add("x:" + nosp[:7])                                # "maurewi..." catches domains
+        keys.add("e:" + nosp[-7:])                               # name ending: "blueschultz"
     if house and street:
         keys.add("a:" + house + "|" + street)                    # same address, any name (DBA)
     if house and nosp:
@@ -43,7 +53,7 @@ def record_keys(name, nosp, phon, house, street):
 
 def all_keys(df):
     return [record_keys(*r) for r in zip(df["name"], df["nosp"], df["phon"],
-                                         df["house"], df["street"])]
+                                         df["house"], df["street"], df["addr"])]
 
 
 def key_matrix(key_lists, vocab):
@@ -79,21 +89,30 @@ def top_k(scores, k):
     return np.concatenate(r_out), np.concatenate(c_out), np.concatenate(v_out)
 
 
-def block_country(s1, q):
-    """s1, q: dataframes of one country. Returns candidate pairs (s1 id, q id, bscore)."""
+def build_index(s1):
+    """Index the S1 records of ONE country. Built once, then queried chunk by chunk."""
     s1_keys = all_keys(s1)
     df = Counter(k for ks in s1_keys for k in ks)
     vocab = {k: j for j, k in enumerate(k for k, n in df.items() if n <= MAX_DF)}
     idf = np.array([np.log(1 + len(s1) / df[k]) for k in vocab], np.float32)
+    # TF-IDF cosine: weight keys by rarity on both sides, then scale every row to length 1,
+    # so an S1 with many (common) keys doesn't win just by having more keys.
+    A = normalize(key_matrix(s1_keys, vocab) @ diags(idf)).T.tocsr()   # keys x S1
+    return dict(vocab=vocab, idf=idf, A=A, ids=s1["id"].values)
 
-    A = key_matrix(s1_keys, vocab).T.tocsr()            # keys x S1
-    Q = key_matrix(all_keys(q), vocab) @ diags(idf)     # queries x keys, weighted by rarity
+
+def query(index, q):
+    """Top-K S1 candidates for every record in q -> pairs (s1, id, bscore, brank)."""
+    Q = normalize(key_matrix(all_keys(q), index["vocab"]) @ diags(index["idf"]))
     out = []
     for start in range(0, Q.shape[0], CHUNK):
-        rows, cols, vals = top_k((Q[start:start + CHUNK] @ A).tocsr(), K)
-        out.append(pd.DataFrame({"s1": s1["id"].values[cols],
+        rows, cols, vals = top_k((Q[start:start + CHUNK] @ index["A"]).tocsr(), K)
+        out.append(pd.DataFrame({"s1": index["ids"][cols],
                                  "id": q["id"].values[rows + start], "bscore": vals}))
-    return pd.concat(out, ignore_index=True)
+    cand = pd.concat(out, ignore_index=True)
+    # rank of this S1 among the query's candidates (0 = best); used later as a feature
+    cand["brank"] = cand.groupby("id")["bscore"].rank(ascending=False, method="first") - 1
+    return cand
 
 
 def block(s1, q):
@@ -101,42 +120,41 @@ def block(s1, q):
     parts = []
     for c in s1["country"].unique():
         t = time.time()
-        part = block_country(s1[s1["country"] == c].reset_index(drop=True),
-                             q[q["country"] == c].reset_index(drop=True))
+        part = query(build_index(s1[s1["country"] == c]), q[q["country"] == c])
         print(f"  {c}: {len(part):,} candidate pairs in {time.time() - t:.0f}s", flush=True)
         parts.append(part)
-    cand = pd.concat(parts, ignore_index=True)
-    # rank of this S1 among the query's candidates (0 = best); used later as a feature
-    cand["brank"] = cand.groupby("id")["bscore"].rank(ascending=False, method="first") - 1
-    return cand
+    return pd.concat(parts, ignore_index=True)
+
+
+def in_sample(ids, sample):
+    """Stable pseudo-random pick of ~sample fraction of ids (same ids every run)."""
+    return pd.util.hash_array(ids.values) % 1000 < sample * 1000
 
 
 def load(split, sample=None):
-    """Load normalized S1 and S2+S3. sample=0.05 keeps 5% of S1 (+ their true matches
-    + 5% of the unmatched S2/S3) so it fits on the laptop."""
-    s1 = pd.read_parquet(DATA / f"{split}_s1.parquet", columns=COLS)
-    q = pd.concat([pd.read_parquet(DATA / f"{split}_s{n}.parquet", columns=COLS)
-                   for n in (2, 3)], ignore_index=True)
-    if sample:
-        keep = lambda ids: pd.util.hash_array(ids.values) % 1000 < sample * 1000
-        _, pairs = read_truth()
-        s1 = s1[keep(s1["id"])]
-        linked = set(pairs["id"])
-        wanted = set(pairs.loc[pairs["s1"].isin(set(s1["id"])), "id"])
-        q = q[q["id"].isin(wanted) | (~q["id"].isin(linked) & keep(q["id"]))]
-    return s1.reset_index(drop=True), q.reset_index(drop=True)
-
-
-def recall_report(cand, s1):
-    """How many true links survived blocking? This is the ceiling for recall."""
+    """ALL S1 (the index must be as crowded as on test), plus the S2/S3 queries.
+    With sample=0.05: queries = every true match of a 5% sample of S1
+    + a 5% sample of all other S2/S3 (the decoys / other S1s' records)."""
+    s1 = read_norm(split, 1, COLS)
+    if not sample:
+        return s1, pd.concat([read_norm(split, n, COLS) for n in (2, 3)], ignore_index=True)
     _, pairs = read_truth()
-    pairs = pairs[pairs["s1"].isin(set(s1["id"]))]
+    wanted = set(pairs.loc[in_sample(pairs["s1"], sample), "id"])
+    del pairs
+    keep_q = lambda d: d["id"].isin(wanted) | in_sample(d["id"], sample)
+    q = pd.concat([read_norm(split, n, COLS, keep_q) for n in (2, 3)], ignore_index=True)
+    return s1, q
+
+
+def recall_report(cand, sample=None):
+    """How many true links (of the sampled S1s) survived blocking? = the recall ceiling."""
+    _, pairs = read_truth()
+    if sample:
+        pairs = pairs[in_sample(pairs["s1"], sample)]
     hit = pairs.merge(cand, on=["s1", "id"], how="left")
-    found = hit["bscore"].notna()
-    print(f"true links: {len(pairs):,}  found by blocking: {found.mean():.4f}  "
+    print(f"true links: {len(pairs):,}  found by blocking: {hit['bscore'].notna().mean():.4f}  "
           f"top-1 by blocking score: {(hit['brank'] == 0).mean():.4f}")
-    print(f"candidate pairs: {len(cand):,}  ({len(cand) / max(len(s1), 1):.1f} per S1)")
-    return hit
+    print(f"candidate pairs: {len(cand):,}  ({cand.groupby('id').size().mean():.1f} per S2/S3)")
 
 
 if __name__ == "__main__":
@@ -146,7 +164,7 @@ if __name__ == "__main__":
     print(f"{split}: {len(s1):,} S1, {len(q):,} S2/S3 records")
     cand = block(s1, q)
     if split == "train":
-        recall_report(cand, s1)
+        recall_report(cand, sample)
     name = f"cand_{split}" + (f"_sample{sample}" if sample else "")
     cand.to_parquet(DATA / f"{name}.parquet", index=False)
     print("saved", DATA / f"{name}.parquet")

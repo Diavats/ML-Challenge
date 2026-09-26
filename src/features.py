@@ -76,11 +76,12 @@ def build(cand, s1, q, workers=None):
     df["bscore_rel"] = df["bscore"] / g["bscore"].transform("max")
     df["tset_rel"] = df["name_tset"] - g["name_tset"].transform("max")
     df["is_s3"] = df["id"].str.startswith("S3").astype(np.int8)
-    df["s1_pop"] = df.groupby("s1")["id"].transform("size")   # how many queries point at this S1
     return df
 
 
-ALL_FEATS = ["bscore", "brank", *FEATS, "n_cand", "bscore_rel", "tset_rel", "is_s3", "s1_pop"]
+# Only per-pair or per-query features: test is scored in chunks of queries, so a feature
+# counting over other queries (e.g. "how many queries point at this S1") would change with chunking.
+ALL_FEATS = ["bscore", "brank", *FEATS, "n_cand", "bscore_rel", "tset_rel", "is_s3"]
 
 
 if __name__ == "__main__":

@@ -1,9 +1,5 @@
 # Amazon ML Challenge 2026: Business Entity Resolution
 
-**Owner:** Dia (BTech AI&ML). She must defend every decision in a viva.
-- Write simple, direct comments.
-- Give paste-ready commands with their real output.
-- Code style is ponytail: minimal, and every non-trivial module has a `--check` self-test.
 
 ## Task (from `student_resource/README.md`)
 - For every **Source 1 (S1)** record, list all matching **S2/S3** records. S1 is already deduplicated.

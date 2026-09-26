@@ -190,16 +190,13 @@ def _norm_rows(rows):
     return [norm_name(n) + norm_addr(a, c) for n, a, c in rows]
 
 
-def normalize_df(df, workers=None):
-    """Adds the normalized columns to a source dataframe (keeps the raw ones too)."""
+def normalize_df(df, pool):
+    """Adds the normalized columns to a source dataframe (keeps the raw ones too).
+    pool = multiprocessing Pool, one worker per CPU core."""
     rows = list(zip(df["business_name"], df["business_address"], df["country"]))
-    chunks = [rows[i:i + 200_000] for i in range(0, len(rows), 200_000)]
-    del rows
-    with Pool(workers) as pool:  # one process per CPU core; chunk results become small frames
-        parts = [pd.DataFrame(p, columns=NAME_COLS + ADDR_COLS)
-                 for p in pool.imap(_norm_rows, chunks)]
-    del chunks
-    norm = pd.concat(parts, ignore_index=True).set_index(df.index)
+    chunks = [rows[i:i + 50_000] for i in range(0, len(rows), 50_000)]
+    out = [r for part in pool.imap(_norm_rows, chunks) for r in part]
+    norm = pd.DataFrame(out, columns=NAME_COLS + ADDR_COLS, index=df.index)
     return pd.concat([df.rename(columns={"entity_id": "id"}), norm], axis=1)
 
 
@@ -230,9 +227,14 @@ if __name__ == "__main__":
     if "--check" in sys.argv:
         _check()
         sys.exit()
-    DATA.mkdir(exist_ok=True)
-    for split in ("train", "test"):
-        for n in (1, 2, 3):
-            df = normalize_df(read_source(split, n))
-            df.to_parquet(DATA / f"{split}_s{n}.parquet", index=False)
-            print(split, n, len(df), "rows ->", DATA / f"{split}_s{n}.parquet", flush=True)
+    # 500k rows at a time, each written as its own part file -> low memory peak
+    with Pool() as pool:
+        for split in ("train", "test"):
+            for n in (1, 2, 3):
+                out = DATA / f"{split}_s{n}"
+                out.mkdir(parents=True, exist_ok=True)
+                total = 0
+                for i, df in enumerate(read_source(split, n, chunksize=500_000)):
+                    normalize_df(df, pool).to_parquet(out / f"part-{i:03}.parquet", index=False)
+                    total += len(df)
+                print(split, n, total, "rows ->", out, flush=True)

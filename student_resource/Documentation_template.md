@@ -1,8 +1,8 @@
 # ML Challenge 2026: Business Entity Resolution Solution Template
 
-**Team Name:** [Your Team Name]  
-**Team Members:** [List all team members]  
-**Submission Date:** [Date]
+**Team Name:** Coding Bots 
+**Team Members:** Dia, Adil, Ishant  
+**Submission Date:** 27 sept, 2026
 
 ---
 

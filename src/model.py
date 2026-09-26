@@ -5,55 +5,60 @@ Decision rule (uses the fact that each S2/S3 belongs to at most one S1):
   keep that link only if the model probability >= threshold.
 The threshold is tuned on held-out S1s to maximise the official macro F0.5.
 
-Run:  python -m src.model train [--sample 0.05]   -> data/model.txt + data/threshold.txt
-      python -m src.model predict                  -> output/matching_results.tsv + candidate_pairs.tsv
+Run:  python -m src.model train --sample 0.05   -> data/model.txt + data/threshold.txt
+      python -m src.model predict               -> scores all test pairs (streamed), writes output/
+      python -m src.model submit 0.6            -> rewrite matching_results.tsv at another threshold
+      python -m src.model candidates            -> output/candidate_pairs.tsv (for the final zip)
 """
+import shutil
 import sys
+import time
 
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-from src import features
-from src.blocking import COLS
+from src import blocking, features
+from src.blocking import COLS, in_sample
 from src.evaluate import as_sets, macro_f05
 from src.features import ALL_FEATS, NORM_COLS
-from src.load import DATA, ROOT, read_truth
+from src.load import DATA, OUT, iter_norm, read_norm, read_truth
+
+READ_COLS = sorted(set(NORM_COLS + COLS))
+SCORED = DATA / "scored_test"   # every test candidate pair with its probability
 
 
-def load_norm(split, n):
-    return pd.read_parquet(DATA / f"{split}_s{n}.parquet", columns=sorted(set(NORM_COLS + COLS)))
+def load_norm(split, n, ids=None):
+    """Normalized records; ids = optional set -> keep only those records (saves RAM)."""
+    return read_norm(split, n, READ_COLS, (lambda d: d["id"].isin(ids)) if ids is not None else None)
 
 
-def decide(df, t):
-    """df has s1, id, p. Best S1 per S2/S3 record, kept if p >= t -> {s1: set(ids)}."""
-    best = df.loc[df.groupby("id")["p"].idxmax()]
-    return as_sets(best[best["p"] >= t])
+def best_per_query(df):
+    """Each S2/S3 record keeps only its highest-probability S1."""
+    return df.loc[df.groupby("id")["p"].idxmax(), ["s1", "id", "p"]]
 
 
-def score_at(df, truth, s1_ids, t):
-    return macro_f05(decide(df, t), truth, s1_ids)
-
-
-def train(sample=None):
-    tag = f"_sample{sample}" if sample else ""
-    cand = pd.read_parquet(DATA / f"cand_train{tag}.parquet")
-    s1 = load_norm("train", 1)
-    if sample:  # same hash rule as blocking.load, so S1s with zero candidates stay in
-        s1 = s1[pd.util.hash_array(s1["id"].values) % 1000 < sample * 1000]
-    q = pd.concat([load_norm("train", 2), load_norm("train", 3)], ignore_index=True)
-    q = q[q["id"].isin(set(cand["id"]))]
+def train(sample):
+    cand = pd.read_parquet(DATA / f"cand_train_sample{sample}.parquet")
+    s1 = load_norm("train", 1, set(cand["s1"]))
+    q = pd.concat([load_norm("train", n, set(cand["id"])) for n in (2, 3)], ignore_index=True)
     df = features.build(cand, s1, q)
-    del q
+    del q, s1, cand
 
     gt_s1, pairs = read_truth()
     pairs["y"] = 1
     df = df.merge(pairs, on=["s1", "id"], how="left")
     df["y"] = df["y"].fillna(0).astype(np.int8)
 
-    # split by S1 (never by pair) so a holdout S1 is completely unseen: 80% train, 20% holdout
-    hold = pd.util.hash_array(df["s1"].values) % 5 == 0
-    tr, ho = df[~hold], df[hold]
+    # Holdout = 20% of the sampled S1s (H). A query goes to holdout if its true S1 is in H
+    # (or, for other queries, by its own hash) - so every holdout query keeps ALL its candidates
+    # and the best-S1 rule runs exactly like on test. Training never sees an S1 from H.
+    all_s1 = gt_s1["source1_entity_id"]
+    sampled = all_s1[in_sample(all_s1, sample)]
+    H = set(sampled[pd.util.hash_array(sampled.values) % 5 == 0])
+    true_s1 = df["id"].map(pairs.set_index("id")["s1"])
+    hold_q = true_s1.isin(H) | (~true_s1.isin(set(sampled)) & (pd.util.hash_array(df["id"].values) % 5 == 0))
+    tr, ho = df[~hold_q & ~df["s1"].isin(H)], df[hold_q].copy()
     print(f"pairs: train {len(tr):,} (pos {tr['y'].mean():.3f}), holdout {len(ho):,}")
 
     model = lgb.train(
@@ -62,15 +67,15 @@ def train(sample=None):
         lgb.Dataset(tr[ALL_FEATS], tr["y"]), num_boost_round=2000,
         valid_sets=[lgb.Dataset(ho[ALL_FEATS], ho["y"])],
         callbacks=[lgb.early_stopping(50), lgb.log_evaluation(100)])
-    ho = ho.assign(p=model.predict(ho[ALL_FEATS]))
+    ho["p"] = model.predict(ho[ALL_FEATS])
 
-    # holdout S1 universe = every S1 in the sample/full set that hashes to holdout,
-    # INCLUDING those with no candidates at all (they score 1.0 only if truly singleton)
-    all_s1 = s1["id"] if sample else gt_s1["source1_entity_id"]
-    ho_s1 = all_s1[pd.util.hash_array(all_s1.values) % 5 == 0].tolist()
-    truth = as_sets(pairs[pairs["s1"].isin(set(ho_s1))])
-    grid = [round(t, 2) for t in np.arange(0.2, 0.96, 0.05)]
-    scores = {t: score_at(ho, truth, ho_s1, t) for t in grid}
+    # score on every S1 in H, including those with zero candidates
+    best = best_per_query(ho)
+    truth = as_sets(pairs[pairs["s1"].isin(H)])
+    scores = {}
+    for t in [round(t, 2) for t in np.arange(0.2, 0.96, 0.05)]:
+        pred = as_sets(best[(best["p"] >= t) & best["s1"].isin(H)])
+        scores[t] = macro_f05(pred, truth, list(H))
     best_t = max(scores, key=scores.get)
     for t, s in scores.items():
         print(f"  threshold {t:.2f}: macro F0.5 = {s:.4f}{'  <- best' if t == best_t else ''}")
@@ -79,7 +84,7 @@ def train(sample=None):
     print("top features:", ", ".join(imp.index[:8]))
     model.save_model(str(DATA / "model.txt"))
     (DATA / "threshold.txt").write_text(str(best_t))
-    print(f"saved model, threshold={best_t}, holdout macro F0.5={scores[best_t]:.4f}")
+    print(f"saved model, threshold={best_t}, holdout macro F0.5={scores[best_t]:.4f} on {len(H):,} S1")
 
 
 def write_list(pairs, s1_ids, col, path):
@@ -91,26 +96,67 @@ def write_list(pairs, s1_ids, col, path):
 
 
 def predict():
-    cand = pd.read_parquet(DATA / "cand_test.parquet")
-    s1 = load_norm("test", 1)
-    q = pd.concat([load_norm("test", 2), load_norm("test", 3)], ignore_index=True)
-    df = features.build(cand, s1, q)
+    """Score every test pair, one country at a time, 300k S2/S3 records at a time.
+    Saves all scored pairs (for candidate_pairs.tsv) and the best S1 per record."""
     model = lgb.Booster(model_file=str(DATA / "model.txt"))
-    t = float((DATA / "threshold.txt").read_text())
-    df["p"] = model.predict(df[ALL_FEATS])
+    s1 = load_norm("test", 1)
+    shutil.rmtree(SCORED, ignore_errors=True)
+    SCORED.mkdir(parents=True)
+    best_parts = []
+    for c in s1["country"].unique():
+        t0 = time.time()
+        s1c = s1[s1["country"] == c].reset_index(drop=True)
+        index = blocking.build_index(s1c)
+        for n in (2, 3):
+            chunks = iter_norm("test", n, READ_COLS, lambda d: d["country"] == c, batch_size=300_000)
+            for i, qb in enumerate(chunks):
+                if qb.empty:
+                    continue
+                df = features.build(blocking.query(index, qb), s1c, qb)
+                df["p"] = model.predict(df[ALL_FEATS]).astype(np.float32)
+                df[["s1", "id", "p"]].to_parquet(SCORED / f"{c}_{n}_{i:03}.parquet", index=False)
+                best_parts.append(best_per_query(df))
+                print(f"  {c} S{n} chunk {i}: {len(qb):,} records, {len(df):,} pairs, "
+                      f"{time.time() - t0:.0f}s", flush=True)
+    pd.concat(best_parts, ignore_index=True).to_parquet(DATA / "best_test.parquet", index=False)
+    submit(float((DATA / "threshold.txt").read_text()))
 
-    best = df.loc[df.groupby("id")["p"].idxmax()]
+
+def submit(t):
+    """matching_results.tsv from the saved best-per-record table at threshold t (no recompute)."""
+    s1_ids = read_norm("test", 1, ["id"])["id"]
+    best = pd.read_parquet(DATA / "best_test.parquet")
     best = best[best["p"] >= t]
-    out = ROOT / "output"
-    out.mkdir(exist_ok=True)
-    write_list(best, s1["id"], "matched_entity_ids", out / "matching_results.tsv")
-    write_list(df, s1["id"], "candidate_entity_ids", out / "candidate_pairs.tsv")
-    print(f"threshold {t}: {len(best):,} links for {best['s1'].nunique():,} of {len(s1):,} S1")
-    print(f"by country:\n{s1.set_index('id').loc[best['s1'], 'country'].value_counts()}")
+    OUT.mkdir(parents=True, exist_ok=True)
+    write_list(best, s1_ids, "matched_entity_ids", OUT / "matching_results.tsv")
+    print(f"threshold {t}: {len(best):,} links, {best['s1'].nunique():,} of {len(s1_ids):,} S1 "
+          f"have a match -> {OUT / 'matching_results.tsv'}")
+
+
+def candidates(buckets=8):
+    """candidate_pairs.tsv = every pair the model scored. Built bucket by bucket
+    (S1s split by hash) so the ~100M pairs never sit in memory at once."""
+    s1_ids = read_norm("test", 1, ["id"])["id"]
+    files = sorted(SCORED.glob("*.parquet"))
+    lists = []
+    for b in range(buckets):
+        part = pd.concat([d[pd.util.hash_array(d["s1"].values) % buckets == b]
+                          for d in (pd.read_parquet(f, columns=["s1", "id"]) for f in files)])
+        lists.append(part.groupby("s1")["id"].agg(lambda x: ",".join(sorted(set(x)))))
+        print(f"  bucket {b + 1}/{buckets}", flush=True)
+    out = pd.DataFrame({"source1_entity_id": s1_ids})
+    out["candidate_entity_ids"] = out["source1_entity_id"].map(pd.concat(lists)).fillna("")
+    out.to_csv(OUT / "candidate_pairs.tsv", sep="\t", index=False)
+    print("wrote", OUT / "candidate_pairs.tsv")
 
 
 if __name__ == "__main__":
-    if sys.argv[1] == "train":
-        train(float(sys.argv[sys.argv.index("--sample") + 1]) if "--sample" in sys.argv else None)
-    else:
+    cmd = sys.argv[1]
+    if cmd == "train":
+        train(float(sys.argv[sys.argv.index("--sample") + 1]))
+    elif cmd == "predict":
         predict()
+    elif cmd == "submit":
+        submit(float(sys.argv[2]))
+    elif cmd == "candidates":
+        candidates()
