@@ -126,8 +126,9 @@ def predict():
     Saves all scored pairs (for candidate_pairs.tsv) and the best S1 per record."""
     model = lgb.Booster(model_file=str(DATA / "model.txt"))
     s1 = load_norm("test", 1)
-    shutil.rmtree(SCORED, ignore_errors=True)
-    SCORED.mkdir(parents=True)
+    if "--fresh" in sys.argv:
+        shutil.rmtree(SCORED, ignore_errors=True)
+    SCORED.mkdir(parents=True, exist_ok=True)   # chunks already on disk are reused (resume)
     best_parts = []
     for c in s1["country"].unique():
         t0 = time.time()
@@ -136,11 +137,15 @@ def predict():
         for n in (2, 3):
             chunks = iter_norm("test", n, READ_COLS, lambda d: d["country"] == c, batch_size=300_000)
             for i, qb in enumerate(chunks):
+                f = SCORED / f"{c}_{n}_{i:03}.parquet"
+                if f.exists():                 # finished in an earlier (interrupted) run
+                    best_parts.append(best_per_query(pd.read_parquet(f)))
+                    continue
                 if qb.empty:
                     continue
                 df = features.build(blocking.query(index, qb), s1c, qb)
                 df["p"] = model.predict(df[ALL_FEATS]).astype(np.float32)
-                df[["s1", "id", "p"]].to_parquet(SCORED / f"{c}_{n}_{i:03}.parquet", index=False)
+                df[["s1", "id", "p"]].to_parquet(f, index=False)
                 best_parts.append(best_per_query(df))
                 print(f"  {c} S{n} chunk {i}: {len(qb):,} records, {len(df):,} pairs, "
                       f"{time.time() - t0:.0f}s", flush=True)
