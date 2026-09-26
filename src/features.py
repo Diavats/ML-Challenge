@@ -62,13 +62,18 @@ def build(cand, s1, q, workers=None):
     right = q[NORM_COLS].add_suffix("_2").rename(columns={"id_2": "id"})
     df = cand.merge(left, on="s1").merge(right, on="id")
     fields = [c + "_1" for c in NORM_COLS[1:]] + [c + "_2" for c in NORM_COLS[1:]]
-    rows = list(zip(*[df[c] for c in fields]))
-    chunks = [rows[i:i + 100_000] for i in range(0, len(rows), 100_000)]
-    with Pool(workers) as pool:
-        out = [f for part in pool.imap(_feat_rows, chunks) for f in part]
-    del rows, chunks
-    feats = pd.DataFrame(np.array(out, np.float32), columns=FEATS, index=df.index)
-    df = pd.concat([df[["s1", "id", "bscore", "brank"]], feats], axis=1)
+    # 500k pairs at a time, 4 workers: sending millions of rows to 8 workers at once ran
+    # the 7.8 GB laptop out of memory (MemoryError in the pool workers).
+    out = []
+    with Pool(workers or 4) as pool:
+        for s in range(0, len(df), 500_000):
+            rows = list(zip(*[df[c].values[s:s + 500_000] for c in fields]))
+            chunks = [rows[i:i + 25_000] for i in range(0, len(rows), 25_000)]
+            out.append(np.array([f for part in pool.imap(_feat_rows, chunks) for f in part],
+                                np.float32))
+    feats = pd.DataFrame(np.concatenate(out), columns=FEATS, index=df.index)
+    df = df[["s1", "id", "bscore", "brank"]]   # drop the text columns before joining: saves RAM
+    df = pd.concat([df, feats], axis=1)
 
     # context features: how does this pair compare with the query's other candidates?
     g = df.groupby("id")
