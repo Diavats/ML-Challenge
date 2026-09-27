@@ -7,6 +7,12 @@
 | `v3/matching_results.tsv.zip` | US/India threshold 0.70, France 0.90. Calibrated so the share of S1 with no match per country ≈ 5.6% (the train singleton rate). 5,720,203 links, 1,634,740 S1 with a match. | **3rd** |
 | `v4up/matching_results.tsv.zip` | Upload ONLY IF v3 > 0.910. US/India 0.80, France 0.95 (stricter). 5,511,309 links, 1,626,101 S1 with a match. PASS. | **4th (option A)** |
 | `v4down/matching_results.tsv.zip` | Upload ONLY IF v3 < 0.910. US/India 0.60, France 0.75 (between v2 and v3). 5,920,874 links, 1,642,758 S1 with a match. PASS. | **4th (option B)** |
+| `v5/matching_results.tsv.zip` | v4up with ONLY US/India stricter: US/India 0.90, France 0.95. 5,297,032 links. PASS. | next |
+| `v6/matching_results.tsv.zip` | v4up with ONLY France stricter: US/India 0.80, France 0.98. 5,473,894 links. PASS. | next |
+
+**Leaderboard so far:** v1 0.909 · v2 0.910 · v3 0.930 · v4up **0.933**. v5 and v6 each change one thing, so their scores show which country still gains from a stricter threshold. The next step combines the winners.
+
+**Run any threshold yourself:** `python -m src.model submit 0.85 France=0.97` works from a fresh clone. It uses `data_share/` (91 MB) and writes `output/matching_results.tsv`.
 
 **How to upload:**
 1. `git pull`
