@@ -4,6 +4,6 @@ v2	2026-09-27 05:10	0.9725 (US/India; France unlabeled)	0.50, France=0.60	611529
 v3	2026-09-27 14:05	0.9660 (US/India holdout)	0.70, France=0.90	5720203	1634740	0.930	Thresholds calibrated so the share of empty S1 per country matches the 5.6% train singleton rate
 v4up	2026-09-27 14:40	(US/IN 0.9589)	0.80, France=0.95	5511309	1626101	0.933	Stricter step of the leaderboard-guided threshold search
 v4down	2026-09-27 14:40	(US/IN 0.9696)	0.60, France=0.75	5920874	1642758	(upload only if v3<0.910)	Midpoint between v2 and v3
-v5	2026-09-27 18:05	-	0.90, France=0.95	5297032	1615973	(pending)	Isolated step: only US/India stricter than v4up
-v6	2026-09-27 18:05	-	0.80, France=0.98	5473894	1624445	(pending)	Isolated step: only France stricter than v4up
-v7	2026-09-27 18:25	-	0.80, France=0.95, p2<0.5	5476519	1624238	(pending)	v4up minus links whose runner-up S1 also scores >=0.5 (ambiguous twins; at most one can be right)
+v5	2026-09-27 18:05	-	0.90, France=0.95	5297032	1615973	0.932	Isolated step: only US/India stricter than v4up
+v6	2026-09-27 18:05	-	0.80, France=0.98	5473894	1624445	0.933	Isolated step: only France stricter than v4up
+v7	2026-09-27 18:25	-	0.80, France=0.95, p2<0.5	5476519	1624238	0.933	v4up minus links whose runner-up S1 also scores >=0.5 (ambiguous twins; at most one can be right)

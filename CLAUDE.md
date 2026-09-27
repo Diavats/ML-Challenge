@@ -77,11 +77,11 @@ python student_resource/utils/validate_submission.py --matching output/matching_
 - SageMaker: the large-instance quota is 0 (Paid plan; increase requested). Claude has no AWS access, so give Dia the steps. The same code runs there via `git clone`.
 - GitHub: https://github.com/Diavats/ML-Challenge (keep it private during the challenge).
 
-## Status (27 Sep, 18:30)
-- Leaderboard: v1 0.909, v2 0.910, v3 0.930, **v4up 0.933** (0.80, France 0.95). Pending: v5 (US/IN 0.90), v6 (France 0.98), v7 (v4up + runner-up p2 < 0.5). All are in `submissions/vN/`.
-- `submit <t> [France=x] [p2=0.5]` reads `data/best_test_p2.parquet`, or `data_share/` (91 MB, in git) for teammates.
-- Team: **Coding Bots** (Adil uploads). Final zip: `python -m src.package <best version>` → `Coding_Bots_submission.zip` (581 MB; the candidate file is local only).
-- Rejected: decoy weighting and the rescue threshold (METHODOLOGY §4.2). The holdout is blind to singleton false links (§4.6), so the leaderboard decides thresholds.
+## Status (27 Sep, 19:10)
+- Leaderboard: v1 0.909, v2 0.910, v3 0.930, **v4up 0.933 = FINAL**, v5 0.932, v6 0.933, v7 0.933. The decision-rule levers are exhausted (METHODOLOGY §4.7–4.8).
+- `Coding_Bots_submission.zip` (580 MB, v4up) is built and verified. Rebuild after any doc change: `python -m src.package v4up`.
+- `src/fullval.py` = exact validation (the real pipeline over all train records touching 1% of S1). Build takes about 2.5 h on the laptop.
+- `submit <t> [France=x] [p2=0.5]` reads `data/best_test_p2.parquet`, or `data_share/` for teammates.
 - **Never add Claude as author or co-author in commits or files.**
 
 ## How to read this codebase

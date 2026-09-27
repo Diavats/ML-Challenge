@@ -105,7 +105,11 @@ Recall@20 was 0.967 and @30 was 0.970. K=10 was kept for compute.
 |---|---|---|---|
 | v1 | t = 0.50 | 0.9725 | 0.909 |
 | v2 | t = 0.50, France 0.60 | 0.9725 (US/IN) | 0.910 |
-| v3 | t = 0.70, France 0.90 | 0.9660 (US/IN) | (pending) |
+| v3 | t = 0.70, France 0.90 | 0.9660 (US/IN) | 0.930 |
+| **v4up (final)** | t = 0.80, France 0.95 | 0.9589 (US/IN) | **0.933** |
+| v5 | t = 0.90, France 0.95 | – | 0.932 |
+| v6 | t = 0.80, France 0.98 | – | 0.933 |
+| v7 | v4up + ambiguity filter (runner-up < 0.5) | – | 0.933 |
 
 - **Holdout at t=0.50:** per-link precision 0.954; F0.5 is 0.9795 for US and 0.9618 for India.
 - **Missed true links:** 4.0% never entered the shortlist, 2.4% had the right S1 ranked first but p < 0.5, and 0.8% had another S1 ranked higher.
@@ -123,6 +127,11 @@ Recall@20 was 0.967 and @30 was 0.970. K=10 was kept for compute.
 
 ---
 
+**Why we plateau at about 0.93:**
+- Decision-rule changes (v4up–v7) all land at 0.932–0.933.
+- The remaining errors are semantic (transliteration, trade names, generic-word look-alikes), which string similarity cannot separate.
+- Next steps, which need a GPU: a cascade with a fine-tuned multilingual cross-encoder on the uncertain band, embedding-based blocking (K = 30), cluster-consistency features, and training on all data with exact full-pipeline validation (`src/fullval.py`).
+
 ## 6. Conclusion
 - For entity resolution at this scale, **score is decided before the model**: address-aware blocking and the one-S1-per-record constraint gave the biggest gains.
 - On an unseen country, **validation can be confidently wrong**. Calibrating to a known base rate (the singleton share) and checking against the leaderboard beat trusting the holdout.
@@ -138,7 +147,7 @@ The code is in `code/business_entity_resolution/`: `src/`, `README.md`, `require
 2. `python -m src.blocking train --sample 0.05`: blocking recall report.
 3. `python -m src.model train --sample 0.05`: features, LightGBM, and the sampling-corrected threshold.
 4. `python -m src.model predict`: streams the test set and writes `output/matching_results.tsv`. Resumable.
-5. `python -m src.model submit 0.7 France=0.9`: the final per-country thresholds, with no recompute.
+5. `python -m src.model submit 0.8 France=0.95`: the final per-country thresholds, with no recompute.
 6. `python -m src.model candidates`: writes `output/candidate_pairs.tsv`.
 7. Self-checks: `python -m src.normalize --check`, `python -m src.features`, `python -m src.evaluate`, `python -m src.check_candidates`.
 

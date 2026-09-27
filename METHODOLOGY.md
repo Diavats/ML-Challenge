@@ -199,14 +199,25 @@ Diagnostics (holdout, US/India, sampling-corrected):
 | v2 | 0.50, France 0.60 | 0.910 |
 | v3 | 0.70, France 0.90 (empty share = 5.6%) | 0.930 |
 | v4up | 0.80, France 0.95 | **0.933** |
-| v5 | 0.90, France 0.95 (US/India step only) | pending |
-| v6 | 0.80, France 0.98 (France step only) | pending |
-| v7 | v4up + ambiguity filter (runner-up p2 < 0.5) | pending |
+| v5 | 0.90, France 0.95 (US/India step only) | 0.932 |
+| v6 | 0.80, France 0.98 (France step only) | 0.933 |
+| v7 | v4up + ambiguity filter (runner-up p2 < 0.5) | 0.933 |
 
 - After v4up the empty share had passed the 5.6% prior (US 6.1%, India 6.3%, France 5.7%), yet the score still rose. So the optimum is stricter than the proxy: the proxy only counts false links on singletons, not extra wrong links on S1 that do have matches.
 - From here each upload changes **one** thing, so its score is attributable.
 - **Ambiguity filter (new signal, no retraining).** 0.74% of links at t=0.8 have a runner-up S1 that also scores ≥ 0.5. S1 is deduplicated and a record has at most one S1, so for these records one of two strong S1 is certainly wrong: a coin flip, which F0.5 penalises.
 - `data_share/` (91 MB in git) lets teammates reproduce any of these with `submit`.
+- **Plateau.** v4up through v7 all score 0.932–0.933, so the decision-rule levers are exhausted. **Final = v4up**: tied best, and the simplest rule, which is the safest bet on the private leaderboard.
+- **Why we plateau at about 0.93 when leaders reach 0.98+.** On the holdout, about 7% of true links are lost (4.0% never shortlisted, 2.4% right S1 but low p, 0.8% ranked below a look-alike), and per-link precision is about 0.98. 0.985 needs about 97% recall at 99% precision. The remaining errors are **semantic**, and character-level string similarity cannot resolve them:
+  - transliterated names (`kut teknalji` ↔ `good technology`)
+  - trade names with nothing in common with the S1 name
+  - French look-alikes built from generic words (`Pessac Lycée` vs `Pessac Parents`)
+
+### 4.8 What we would build next (not possible tonight: no GPU quota, 8 GB RAM, about 4 h per full re-score)
+1. **Cascade matcher.** LightGBM settles the clear pairs; a fine-tuned multilingual cross-encoder (MIT/Apache, e.g. MiniLM / DeBERTa-v3, well within the ≤ 8B limit) judges only the uncertain band (p between 0.2 and 0.95, about 5–10% of pairs).
+2. **Higher-recall blocking.** K = 30 (+1% measured) plus multilingual embedding nearest neighbours, targeting about 99% shortlist recall.
+3. **Cluster consistency.** A record must also agree with the other records already assigned to that S1, not only with the S1 itself. This targets look-alike decoys.
+4. **Train on all data** and select everything with `src/fullval.py` (exact validation: the real pipeline over all training records, so the holdout sees every look-alike).
 
 ### 4.5 Bugs caught before any upload
 - **Windows line endings.** pandas on Windows ended every line with `\r\n` (carriage return + newline). The official validator hides this, because Python's text mode drops the `\r`. But a scorer on Linux would read the header as `matched_entity_ids` + `\r`, and the last ID of every row as e.g. `S3-867809779` + `\r`, an ID that does not exist. That means either a rejected file or about 1.65M wrong links. Fixed with `to_csv(..., lineterminator="\n")`, and checked that the file contains 0 `\r` bytes.
