@@ -227,6 +227,10 @@ Diagnostics (holdout, US/India, sampling-corrected):
 
 - Unlike the sampled holdout (0.97, best at 0.50), this **reproduces the leaderboard's shape**: best at 0.70–0.80, flat after, and the ambiguity filter adds nothing (+0.0002).
 - It confirms the decision rules are exhausted and that **v4up is final**.
+- **Per-S1 set rules**, tested on the same exact holdout, are all worse than v4up (0.9460):
+  - lower bar for businesses that already have a strong (≥ 0.95) match: best 0.9459
+  - stricter bar for businesses without one: best 0.9440
+  - keep a link only if it is close to the business's best link: best 0.9455
 - The public LB (0.933) against US+India (about 0.946) implies **France ≈ 0.86**: the unseen country is the largest remaining gap.
 
 ### 4.8 What we would build next (not possible tonight: no GPU quota, 8 GB RAM, about 4 h per full re-score)
