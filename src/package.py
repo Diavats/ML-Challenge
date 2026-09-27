@@ -22,7 +22,8 @@ def main(version):
     matching = ROOT / "submissions" / f"{version}_matching_results.tsv"
     zip_path = ROOT / f"{TEAM}_submission.zip"
     code = "code/business_entity_resolution/"
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+    # bzip2 (a standard zip method): the portal limit is 512 MB, and deflate gave 580 MB
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_BZIP2, compresslevel=9) as z:
         z.write(matching, "output/matching_results.tsv")
         z.write(OUT / "candidate_pairs.tsv", "output/candidate_pairs.tsv")
         for f in sorted((ROOT / "src").glob("*.py")):          # all source code
