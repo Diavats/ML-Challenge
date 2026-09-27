@@ -161,16 +161,10 @@ All features are **language-independent** (string similarity and agree/conflict 
 | v1 | t = 0.50 everywhere | 6,138,289 | 1,651,318 / 1,732,544 | PASS (`--check-ids`) | pending |
 | v2 | t = 0.50, France 0.60 | 6,115,293 (v1 minus 22,996 France links only) | 1,650,489 / 1,732,544 | PASS (official, incl. candidate cross-check) | pending |
 
-The files are in the single GitHub Release `submission-files`, unzipped; git rejects files over 100 MB. The log is `submissions/log.tsv`.
+The zipped files are in git under `submissions/v1/` and `submissions/v2/`. The log is `submissions/log.tsv`.
 
 ### 4.5 Bugs caught before any upload
-- **Windows line endings.** pandas on Windows wrote `
-`. The official validator hides it (Python text mode strips `
-`), but a Linux scorer would read the header as `matched_entity_ids
-` and the last ID of every row as `S3-…
-`, a non-existent ID. That would mean either rejection or about 1.65M wrong links. Fixed with `lineterminator="
-"`, and checked that the file has 0 `
-` bytes.
+- **Windows line endings.** pandas on Windows ended every line with `\r\n` (carriage return + newline). The official validator hides this, because Python's text mode drops the `\r`. But a scorer on Linux would read the header as `matched_entity_ids` + `\r`, and the last ID of every row as e.g. `S3-867809779` + `\r`, an ID that does not exist. That means either a rejected file or about 1.65M wrong links. Fixed with `to_csv(..., lineterminator="\n")`, and checked that the file contains 0 `\r` bytes.
 - **Candidate file too big for the official validator on 8 GB RAM** (99.3M IDs in Python sets). `src/check_candidates.py` streams the file line by line with the same rules: PASS, and every final match is inside its candidate list.
 
 ## 5. Engineering notes

@@ -60,7 +60,7 @@
   - `model.txt` (= v1), `model_v1.txt`, `model_v2_rejected.txt`, `threshold.txt` (0.5)
   - `scored_test/`, `best_test.parquet`
 - `logs/` (gitignored): run logs. `output/`: submission files.
-- `release/submission-files/` (gitignored): the raw output files attached to the single GitHub Release `submission-files` (git rejects files over 100 MB). `submissions/log.tsv`: the version log. `submissions/vN_*.tsv` are local copies.
+- `submissions/vN/matching_results.tsv.zip`: IN GIT (about 44 MB each) so teammates just `git pull`. `submissions/README.md` gives counts and upload order. `submissions/log.tsv` is the version log. `submissions/vN_*.tsv` are raw local copies (gitignored). `output/candidate_pairs.tsv` (1.3 GB) stays local, for the final zip only.
 
 ## Commands (PowerShell 5.1 on the laptop: no `&&`)
 ```

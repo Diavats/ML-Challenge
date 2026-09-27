@@ -48,7 +48,7 @@ Every design decision and number is in **[METHODOLOGY.md](METHODOLOGY.md)**.
 - `python -m src.features` and `python -m src.evaluate` are the self-tests for the features and the official F0.5 formula.
 
 ## Submitted versions
-- The output files are too big for git (GitHub rejects files over 100 MB; `matching_results.tsv` is 101.5 MB). They are attached, unzipped, to one GitHub **Release** called `submission-files`: `matching_results_v1.tsv`, `matching_results_v2.tsv`, `candidate_pairs.tsv`, and `README_submissions.txt` with counts and checks.
+- Zipped submission files are in git: `submissions/v1/` and `submissions/v2/` (`git pull`, unzip, upload). `submissions/README.md` explains them. `candidate_pairs.tsv` (1.3 GB) is too big for git; it goes only into the final zip.
 - Scores and the rule behind each version are in `submissions/log.tsv` and `METHODOLOGY.md` §4.4.
 
 ## Code map

@@ -10,3 +10,5 @@ logs/
 submissions/*.tsv
 !submissions/log.tsv
 release/
+# the zipped final-match files ARE shared through git (44 MB each)
+!submissions/v*/matching_results.tsv.zip
