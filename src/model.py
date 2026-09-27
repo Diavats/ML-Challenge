@@ -22,7 +22,7 @@ from src import blocking, features
 from src.blocking import COLS, in_sample
 from src.evaluate import as_sets, macro_f05
 from src.features import ALL_FEATS, NORM_COLS
-from src.load import DATA, OUT, iter_norm, read_norm, read_truth
+from src.load import DATA, OUT, ROOT, iter_norm, read_norm, read_truth
 
 READ_COLS = sorted(set(NORM_COLS + COLS))
 SCORED = DATA / "scored_test"   # every test candidate pair with its probability
@@ -164,9 +164,14 @@ def predict():
 def submit(t, per_country=None):
     """matching_results.tsv from the saved best-per-record table (no recompute).
     t = threshold for every country; per_country = {"France": 0.6} overrides it for some."""
-    s1 = read_norm("test", 1, ["id", "country"])
+    if (DATA / "best_test.parquet").exists():          # full data on this machine
+        s1 = read_norm("test", 1, ["id", "country"])
+        best = pd.read_parquet(DATA / "best_test.parquet")
+    else:                                                # teammate: slim copy from git (data_share/)
+        share = ROOT / "data_share"
+        s1 = pd.read_parquet(share / "s1_country.parquet")
+        best = pd.concat([pd.read_parquet(f) for f in sorted(share.glob("best_part*.parquet"))])
     s1_ids = s1["id"]
-    best = pd.read_parquet(DATA / "best_test.parquet")
     # each link gets the threshold of its S1's country (default t)
     need = best["s1"].map(s1.set_index("id")["country"]).map(per_country or {}).fillna(t)
     best = best[best["p"] >= need]
