@@ -158,10 +158,39 @@ All features are **language-independent** (string similarity and agree/conflict 
 
 | Version | Rule | Links | S1 with a match | Validator | Leaderboard |
 |---|---|---|---|---|---|
-| v1 | t = 0.50 everywhere | 6,138,289 | 1,651,318 / 1,732,544 | PASS (`--check-ids`) | pending |
-| v2 | t = 0.50, France 0.60 | 6,115,293 (v1 minus 22,996 France links only) | 1,650,489 / 1,732,544 | PASS (official, incl. candidate cross-check) | pending |
+| v1 | t = 0.50 everywhere | 6,138,289 | 1,651,318 / 1,732,544 | PASS (`--check-ids`) | **0.909** |
+| v2 | t = 0.50, France 0.60 | 6,115,293 (v1 minus 22,996 France links only) | 1,650,489 / 1,732,544 | PASS (official, incl. candidate cross-check) | **0.910** |
+| v3 | t = 0.70, France 0.90 | 5,720,203 | 1,634,740 / 1,732,544 | PASS | pending |
 
 The zipped files are in git under `submissions/v1/` and `submissions/v2/`. The log is `submissions/log.tsv`.
+
+### 4.6 Leaderboard vs holdout gap (0.909 vs 0.9725) and the fix
+Diagnostics (holdout, US/India, sampling-corrected):
+
+| t | per-link precision | F0.5 all | US | India |
+|---|---|---|---|---|
+| 0.5 | 0.954 | 0.9725 | 0.9795 | 0.9618 |
+| 0.6 | 0.971 | 0.9696 | 0.9764 | 0.9593 |
+| 0.7 | 0.980 | 0.9660 | 0.9733 | 0.9549 |
+| 0.8 | 0.990 | 0.9589 | 0.9675 | 0.9459 |
+| 0.9 | 0.992 | 0.9490 | 0.9601 | 0.9322 |
+
+- The holdout estimates **0 false links on no-match (singleton) S1**. It cannot see them: the records that would cause them are sampled at only about 1%.
+- The test set says otherwise. Share of S1 left **empty** at t = 0.50: US 4.8%, India 4.9%, France 3.8%, against a **5.6%** singleton rate in train. So at least about 1–2% of S1 are singletons with a false link, and each one scores **0 instead of 1**. That matches a gap of about 0.01–0.02+, and v2 (stricter France) scoring higher than v1 points the same way.
+- **Label-free calibration:** per country, pick the threshold at which the empty share reaches the 5.6% prior.
+
+| t | US empty | India empty | France empty |
+|---|---|---|---|
+| 0.5 | 0.048 | 0.049 | 0.038 |
+| 0.7 | **0.057** | **0.057** | 0.045 |
+| 0.9 | 0.065 | 0.072 | **0.053** |
+
+- This gives **v3 = US/India 0.70, France 0.90**. The leaderboard, with 3 uploads left on the last day, decides. Adil's review items are answered here:
+  - Precision 0.954 at t = 0.50, so the precision gap is real.
+  - The threshold sweep is above.
+  - Singleton false links are real on test.
+  - The one-S1-per-record rule is already a hard winner-take-all (`best_per_query`).
+  - The per-country breakdown is above.
 
 ### 4.5 Bugs caught before any upload
 - **Windows line endings.** pandas on Windows ended every line with `\r\n` (carriage return + newline). The official validator hides this, because Python's text mode drops the `\r`. But a scorer on Linux would read the header as `matched_entity_ids` + `\r`, and the last ID of every row as e.g. `S3-867809779` + `\r`, an ID that does not exist. That means either a rejected file or about 1.65M wrong links. Fixed with `to_csv(..., lineterminator="\n")`, and checked that the file contains 0 `\r` bytes.

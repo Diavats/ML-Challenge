@@ -43,6 +43,8 @@ Every design decision and number is in **[METHODOLOGY.md](METHODOLOGY.md)**.
 **Other useful commands:**
 - `python -m src.model submit 0.5` rewrites the submission at another threshold instantly (no recompute; needs step 4 done once).
 - `python -m src.model submit 0.5 France=0.6` sets a different threshold for one country (this is v2).
+- `python -m src.model submit 0.7 France=0.9` is v3: per-country thresholds calibrated to the 5.6% singleton rate.
+- `python -m src.package v3` builds `Coding_Bots_submission.zip` in the exact structure the rules ask for.
 - `python -m src.model tune --sample 0.05` re-picks the threshold from the saved holdout (seconds).
 - `python -m src.model predict` resumes by itself if it was interrupted: saved chunks are reused.
 - `python -m src.features` and `python -m src.evaluate` are the self-tests for the features and the official F0.5 formula.

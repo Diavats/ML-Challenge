@@ -77,8 +77,10 @@ python student_resource/utils/validate_submission.py --matching output/matching_
 - SageMaker: the large-instance quota is 0 (Paid plan; increase requested). Claude has no AWS access, so give Dia the steps. The same code runs there via `git clone`.
 - GitHub: https://github.com/Diavats/ML-Challenge (keep it private during the challenge).
 
-## Status (27 Sep, early morning)
-- v1 (t=0.50) and v2 (France 0.60) are built and validated. Adil uploads them, then keep the better leaderboard score.
+## Status (27 Sep, 14:00)
+- Leaderboard: v1 (t=0.50) **0.909**; v2 (France 0.60) **0.910**. The holdout (0.9725) is optimistic because it cannot see false links on singletons (METHODOLOGY §4.6).
+- v3 = US/India 0.70, France 0.90 (calibrated to the 5.6% singleton rate), pending on the leaderboard.
+- Team: **Coding Bots** (Adil uploads). Final zip: `python -m src.package <best version>` → `Coding_Bots_submission.zip`. The filled template is `Documentation_template.md` at the repo root.
 - Rejected: decoy weighting and the rescue threshold (METHODOLOGY §4.2).
 - **Never add Claude as author or co-author in commits or files.**
 
