@@ -29,3 +29,9 @@
 - It is too big for git, so it is not here.
 
 **Choosing the final version:** keep whichever version gets the higher leaderboard score, and record both scores in `log.tsv`.
+
+## Final submission zip (v4up = final, 0.933)
+- **File:** `Coding_Bots_submission.zip`, 491 MB (portal limit 512 MB). Built with `python -m src.package v4up`. It is too big for git and lives on the machine that built it.
+- **Compression:** bzip2, a standard zip method, needed to get under 512 MB. Plain deflate gave 580 MB.
+- **To open it:** use 7-Zip or WinRAR on Windows, the built-in tools on macOS or Linux (`unzip`), or Python (`python -m zipfile -e Coding_Bots_submission.zip out/`). Windows' built-in "Extract All" cannot open bzip2 zips.
+- **Contents:** `output/matching_results.tsv` (v4up), `output/candidate_pairs.tsv`, `code/business_entity_resolution/` (src, README, requirements, METHODOLOGY), and `Documentation_template.md`.
