@@ -60,7 +60,7 @@
   - `model.txt` (= v1), `model_v1.txt`, `model_v2_rejected.txt`, `threshold.txt` (0.5)
   - `scored_test/`, `best_test.parquet`
 - `logs/` (gitignored): run logs. `output/`: submission files.
-- `release/vN/` (gitignored): zips uploaded to GitHub Releases. `submissions/log.tsv`: the version log. `submissions/vN_*.tsv` are local copies.
+- `release/submission-files/` (gitignored): the raw output files attached to the single GitHub Release `submission-files` (git rejects files over 100 MB). `submissions/log.tsv`: the version log. `submissions/vN_*.tsv` are local copies.
 
 ## Commands (PowerShell 5.1 on the laptop: no `&&`)
 ```
