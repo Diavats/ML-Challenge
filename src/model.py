@@ -161,12 +161,14 @@ def predict():
     submit(float((DATA / "threshold.txt").read_text()))
 
 
-def submit(t, per_country=None):
+def submit(t, per_country=None, p2_max=None):
     """matching_results.tsv from the saved best-per-record table (no recompute).
-    t = threshold for every country; per_country = {"France": 0.6} overrides it for some."""
-    if (DATA / "best_test.parquet").exists():          # full data on this machine
+    t = threshold for every country; per_country = {"France": 0.6} overrides it for some.
+    p2_max = drop a link when the record's SECOND-best S1 also scores >= p2_max
+             (two strong S1 for one record: at most one can be right, so the link is a coin flip)."""
+    if (DATA / "best_test_p2.parquet").exists():       # full data on this machine
         s1 = read_norm("test", 1, ["id", "country"])
-        best = pd.read_parquet(DATA / "best_test.parquet")
+        best = pd.read_parquet(DATA / "best_test_p2.parquet")
     else:                                                # teammate: slim copy from git (data_share/)
         share = ROOT / "data_share"
         s1 = pd.read_parquet(share / "s1_country.parquet")
@@ -175,6 +177,8 @@ def submit(t, per_country=None):
     # each link gets the threshold of its S1's country (default t)
     need = best["s1"].map(s1.set_index("id")["country"]).map(per_country or {}).fillna(t)
     best = best[best["p"] >= need]
+    if p2_max is not None:
+        best = best[best["p2"] < p2_max]
     OUT.mkdir(parents=True, exist_ok=True)
     write_list(best, s1_ids, "matched_entity_ids", OUT / "matching_results.tsv")
     print(f"threshold {t} {per_country or ''}: {len(best):,} links, {best['s1'].nunique():,} of {len(s1_ids):,} S1 "
@@ -223,8 +227,10 @@ if __name__ == "__main__":
     elif cmd == "predict":
         predict()
     elif cmd == "submit":
-        # e.g.  submit 0.5            or   submit 0.5 France=0.6
+        # e.g.  submit 0.5     or   submit 0.8 France=0.95     or   submit 0.8 France=0.95 p2=0.5
         extra = dict(a.split("=") for a in sys.argv[3:])
-        submit(float(sys.argv[2]), {c: float(v) for c, v in extra.items()})
+        p2 = extra.pop("p2", None)
+        submit(float(sys.argv[2]), {c: float(v) for c, v in extra.items()},
+               float(p2) if p2 is not None else None)
     elif cmd == "candidates":
         candidates()

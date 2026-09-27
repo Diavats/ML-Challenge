@@ -192,6 +192,22 @@ Diagnostics (holdout, US/India, sampling-corrected):
   - The one-S1-per-record rule is already a hard winner-take-all (`best_per_query`).
   - The per-country breakdown is above.
 
+### 4.7 Leaderboard-guided search (last day)
+| Version | Rule | Public LB |
+|---|---|---|
+| v1 | 0.50 | 0.909 |
+| v2 | 0.50, France 0.60 | 0.910 |
+| v3 | 0.70, France 0.90 (empty share = 5.6%) | 0.930 |
+| v4up | 0.80, France 0.95 | **0.933** |
+| v5 | 0.90, France 0.95 (US/India step only) | pending |
+| v6 | 0.80, France 0.98 (France step only) | pending |
+| v7 | v4up + ambiguity filter (runner-up p2 < 0.5) | pending |
+
+- After v4up the empty share had passed the 5.6% prior (US 6.1%, India 6.3%, France 5.7%), yet the score still rose. So the optimum is stricter than the proxy: the proxy only counts false links on singletons, not extra wrong links on S1 that do have matches.
+- From here each upload changes **one** thing, so its score is attributable.
+- **Ambiguity filter (new signal, no retraining).** 0.74% of links at t=0.8 have a runner-up S1 that also scores ≥ 0.5. S1 is deduplicated and a record has at most one S1, so for these records one of two strong S1 is certainly wrong: a coin flip, which F0.5 penalises.
+- `data_share/` (91 MB in git) lets teammates reproduce any of these with `submit`.
+
 ### 4.5 Bugs caught before any upload
 - **Windows line endings.** pandas on Windows ended every line with `\r\n` (carriage return + newline). The official validator hides this, because Python's text mode drops the `\r`. But a scorer on Linux would read the header as `matched_entity_ids` + `\r`, and the last ID of every row as e.g. `S3-867809779` + `\r`, an ID that does not exist. That means either a rejected file or about 1.65M wrong links. Fixed with `to_csv(..., lineterminator="\n")`, and checked that the file contains 0 `\r` bytes.
 - **Candidate file too big for the official validator on 8 GB RAM** (99.3M IDs in Python sets). `src/check_candidates.py` streams the file line by line with the same rules: PASS, and every final match is inside its candidate list.

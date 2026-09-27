@@ -9,6 +9,7 @@
 | `v4down/matching_results.tsv.zip` | Upload ONLY IF v3 < 0.910. US/India 0.60, France 0.75 (between v2 and v3). 5,920,874 links, 1,642,758 S1 with a match. PASS. | **4th (option B)** |
 | `v5/matching_results.tsv.zip` | v4up with ONLY US/India stricter: US/India 0.90, France 0.95. 5,297,032 links. PASS. | next |
 | `v6/matching_results.tsv.zip` | v4up with ONLY France stricter: US/India 0.80, France 0.98. 5,473,894 links. PASS. | next |
+| `v7/matching_results.tsv.zip` | v4up with ONLY the ambiguity filter: a link is dropped when the record's 2nd-best S1 also scores ≥ 0.5 (34,790 links removed). PASS. | next |
 
 **Leaderboard so far:** v1 0.909 · v2 0.910 · v3 0.930 · v4up **0.933**. v5 and v6 each change one thing, so their scores show which country still gains from a stricter threshold. The next step combines the winners.
 
