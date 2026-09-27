@@ -127,6 +127,8 @@ Recall@20 was 0.967 and @30 was 0.970. K=10 was kept for compute.
 
 ---
 
+**Exact full-pipeline validation** (all training records touching 22,027 held-out S1): t=0.50 → 0.9366, t=0.70 → 0.9464, t=0.80 → 0.9460, t=0.90 → 0.9414. It matches the leaderboard's shape, and implies France ≈ 0.86 against about 0.946 for US+India.
+
 **Why we plateau at about 0.93:**
 - Decision-rule changes (v4up–v7) all land at 0.932–0.933.
 - The remaining errors are semantic (transliteration, trade names, generic-word look-alikes), which string similarity cannot separate.

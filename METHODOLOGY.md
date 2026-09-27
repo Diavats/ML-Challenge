@@ -213,6 +213,22 @@ Diagnostics (holdout, US/India, sampling-corrected):
   - trade names with nothing in common with the S1 name
   - French look-alikes built from generic words (`Pessac Lycée` vs `Pessac Parents`)
 
+**Exact full-pipeline validation** (`src/fullval.py`): the real pipeline over every training record that touches 22,027 held-out S1 (958,830 records), US + India.
+
+| Rule | Exact macro F0.5 |
+|---|---|
+| t = 0.50 | 0.9366 |
+| t = 0.60 | 0.9429 |
+| t = 0.70 | **0.9464** |
+| t = 0.80 (v4up) | **0.9460** |
+| t = 0.85 | 0.9450 |
+| t = 0.90 | 0.9414 |
+| t = 0.80 + runner-up < 0.5 | 0.9462 |
+
+- Unlike the sampled holdout (0.97, best at 0.50), this **reproduces the leaderboard's shape**: best at 0.70–0.80, flat after, and the ambiguity filter adds nothing (+0.0002).
+- It confirms the decision rules are exhausted and that **v4up is final**.
+- The public LB (0.933) against US+India (about 0.946) implies **France ≈ 0.86**: the unseen country is the largest remaining gap.
+
 ### 4.8 What we would build next (not possible tonight: no GPU quota, 8 GB RAM, about 4 h per full re-score)
 1. **Cascade matcher.** LightGBM settles the clear pairs; a fine-tuned multilingual cross-encoder (MIT/Apache, e.g. MiniLM / DeBERTa-v3, well within the ≤ 8B limit) judges only the uncertain band (p between 0.2 and 0.95, about 5–10% of pairs).
 2. **Higher-recall blocking.** K = 30 (+1% measured) plus multilingual embedding nearest neighbours, targeting about 99% shortlist recall.
