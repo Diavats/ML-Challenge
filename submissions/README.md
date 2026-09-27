@@ -5,6 +5,8 @@
 | `v1/matching_results.tsv.zip` | Threshold 0.50 for every country. 1,732,544 rows, 6,138,289 links, 1,651,318 S1 with a match, 81,226 empty. | **1st** |
 | `v2/matching_results.tsv.zip` | Same model. France only uses threshold 0.60. Exactly v1 minus 22,996 France links; nothing else changed. 6,115,293 links, 1,650,489 S1 with a match, 82,055 empty. | **2nd** |
 | `v3/matching_results.tsv.zip` | US/India threshold 0.70, France 0.90. Calibrated so the share of S1 with no match per country ≈ 5.6% (the train singleton rate). 5,720,203 links, 1,634,740 S1 with a match. | **3rd** |
+| `v4up/matching_results.tsv.zip` | Upload ONLY IF v3 > 0.910. US/India 0.80, France 0.95 (stricter). 5,511,309 links, 1,626,101 S1 with a match. PASS. | **4th (option A)** |
+| `v4down/matching_results.tsv.zip` | Upload ONLY IF v3 < 0.910. US/India 0.60, France 0.75 (between v2 and v3). 5,920,874 links, 1,642,758 S1 with a match. PASS. | **4th (option B)** |
 
 **How to upload:**
 1. `git pull`
