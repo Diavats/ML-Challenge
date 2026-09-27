@@ -37,10 +37,19 @@ Every design decision and number is in **[METHODOLOGY.md](METHODOLOGY.md)**.
 | 4 | `python -m src.model predict` | Scores the whole test set (one country / chunk at a time) and writes the submission. | ~2–3 h | `output/matching_results.tsv` |
 | 5 | `python student_resource/utils/validate_submission.py --matching output/matching_results.tsv --test-dir student_resource/dataset/test` | Official format check. Must say **PASS** before uploading. | seconds | – |
 
+| 6 | `python -m src.model candidates` | Writes `output/candidate_pairs.tsv` (every pair the model scored). The final zip requires it. | ~10 min | `output/candidate_pairs.tsv` (~1.3 GB) |
+| 7 | `python -m src.check_candidates` | Checks the candidate file with the official rules, reading line by line. The official validator runs out of RAM on 1.3 GB. Must say **PASS**. | ~5 min | – |
+
 **Other useful commands:**
-- `python -m src.model submit 0.7` rewrites the submission at a different threshold instantly (no recompute; needs step 4 done once).
-- `python -m src.model candidates` writes `output/candidate_pairs.tsv`, which the final zip requires.
+- `python -m src.model submit 0.5` rewrites the submission at another threshold instantly (no recompute; needs step 4 done once).
+- `python -m src.model submit 0.5 France=0.6` sets a different threshold for one country (this is v2).
+- `python -m src.model tune --sample 0.05` re-picks the threshold from the saved holdout (seconds).
+- `python -m src.model predict` resumes by itself if it was interrupted: saved chunks are reused.
 - `python -m src.features` and `python -m src.evaluate` are the self-tests for the features and the official F0.5 formula.
+
+## Submitted versions
+- Every uploaded file is in the repo's **Releases** page (v1, v2, …), with a stats file of counts and sample rows.
+- Scores and the rule behind each version are in `submissions/log.tsv` and `METHODOLOGY.md` §4.4.
 
 ## Code map
 | File | Role |

@@ -1,2 +1,3 @@
 version	date	holdout_f05_corrected	threshold	links	s1_with_match	lb_score	notes
-v1	2026-09-27 01:40	0.9725	0.50	6138289	1651318	(pending)	LightGBM 1379 trees, K=10 address-key blocking, 5% sample training
+v1	2026-09-27 01:40	0.9725	0.50	6138289	1651318	(pending)	LightGBM 1379 trees, K=10 address-key blocking, 5% sample training; LF line endings (CRLF bug fixed before upload)
+v2	2026-09-27 05:10	0.9725 (US/India; France unlabeled)	0.50, France=0.60	6115293	1650489	(pending)	Same model as v1; France-only stricter threshold (spot-check: ~50% wrong in p 0.50-0.60)

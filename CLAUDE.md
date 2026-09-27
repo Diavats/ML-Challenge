@@ -46,14 +46,21 @@
   - Uses TF-IDF cosine, top K=10 per S2/S3.
   - `load(split, sample)` builds the full S1 index with sampled queries (realistic evaluation).
 - `src/features.py`: `pair_features` (17 similarity features) and `build(cand, s1, q)` (adds context features); `ALL_FEATS`.
-- `src/model.py`: `train --sample`, `predict` (streaming test run), `submit <t>` (re-threshold), `candidates` (candidate_pairs.tsv).
+- `src/model.py`:
+  - `train --sample`
+  - `tune --sample` (sampling-corrected threshold, plateau centre)
+  - `predict` (streaming, resumable)
+  - `submit <t> [France=0.6]` (re-threshold, per country)
+  - `candidates` (two-pass bucketed candidate_pairs.tsv, LF endings)
+- `src/check_candidates.py`: streaming checker for the 1.3 GB candidate file (the official validator runs out of memory).
 - `src/evaluate.py`: the official macro F0.5.
 - `data/` (gitignored):
   - `{split}_s{n}.parquet`: normalized sources
   - `cand_*.parquet`: blocking output
-  - `model.txt`, `threshold.txt`
+  - `model.txt` (= v1), `model_v1.txt`, `model_v2_rejected.txt`, `threshold.txt` (0.5)
   - `scored_test/`, `best_test.parquet`
 - `logs/` (gitignored): run logs. `output/`: submission files.
+- `release/vN/` (gitignored): zips uploaded to GitHub Releases. `submissions/log.tsv`: the version log. `submissions/vN_*.tsv` are local copies.
 
 ## Commands (PowerShell 5.1 on the laptop: no `&&`)
 ```
@@ -69,6 +76,11 @@ python student_resource/utils/validate_submission.py --matching output/matching_
 - Laptop: 7.8 GB RAM, 8 CPUs. The streaming pipeline fits; run long jobs in the background with a log in `logs/`.
 - SageMaker: the large-instance quota is 0 (Paid plan; increase requested). Claude has no AWS access, so give Dia the steps. The same code runs there via `git clone`.
 - GitHub: https://github.com/Diavats/ML-Challenge (keep it private during the challenge).
+
+## Status (27 Sep, early morning)
+- v1 (t=0.50) and v2 (France 0.60) are built and validated. Adil uploads them, then keep the better leaderboard score.
+- Rejected: decoy weighting and the rescue threshold (METHODOLOGY §4.2).
+- **Never add Claude as author or co-author in commits or files.**
 
 ## How to read this codebase
 - Read the one function you need, not whole files.

@@ -126,18 +126,70 @@ All features are **language-independent** (string similarity and agree/conflict 
 - 1,651,318 of 1,732,544 test S1 have a match. 4.7% are empty, vs 5.6% singletons in train, which is plausible.
 - The validator passes with `--check-ids`. Logged in `submissions/log.tsv`.
 
-Leaderboard submissions are logged in `submissions/log.tsv`.
+- **The threshold is chosen by a fixed rule** (`tune`): the threshold whose average with its two neighbours is highest, i.e. the centre of the plateau. So `data/threshold.txt` always equals what we submit (0.50).
+
+### 4.1 Error analysis of v1 (holdout, t = 0.50)
+
+| True links of held-out S1 (76,509) | Share |
+|---|---|
+| found | **92.8%** |
+| missed: never entered the shortlist (blocking) | 4.0% |
+| missed: right S1 ranked first but p < 0.5 | 2.4% |
+| missed: another S1 ranked higher | 0.8% |
+
+- The miss pattern is the same for S2 and S3 records, and for India and US.
+- **Wrong links:** 41 in the holdout. 7 are "record of another held-out S1". 34 are records of other businesses or decoys, seen at only 1% of their real rate, so about **3,400 at full scale** against about 71,000 correct links (per-link precision about 95%).
+- Wrong links have mean p = 0.68: confident mistakes on look-alike businesses (same generic words, nearby address).
+
+### 4.2 Experiments that did NOT beat v1 (kept out of the pipeline)
+
+| Idea | Why we tried it | Corrected F0.5 | Decision |
+|---|---|---|---|
+| Weight decoy-type training rows ×20 (= 1/sample) so training matches the test mix | Most false links come from these records | 0.9684 @ 0.35 (v1: **0.9725**) | Rejected. The threshold correction already handles precision; reweighting hurt ranking. |
+| "Rescue" threshold: an S1 with no link ≥ 0.50 may take its best link down to 0.10–0.40 | 2.4% of links are right-S1-but-low-p | best 0.9648 | Rejected. An S1 with no confident match is usually a **true singleton**, where an empty list earns a full 1.0. |
+
+### 4.3 France (not in training) spot-check
+- France probabilities are shifted up: median best-link p 0.996 vs 0.951 for US/India. 68% of France records are linked, vs about 61%.
+- In 12 random France links with p in 0.50–0.60, about 5 looked wrong: generic French name words (club, comité, parents, santé, groupe) plus a nearby address. In 8 links with p in 0.40–0.50, about half looked right.
+- 96.2% of France S1 get a match, vs about 94.4% expected from train (5.6% singletons). This hints at extra false links on France singletons, and each one costs a full 0.
+- Raising France alone to t = 0.60 removes 23,000 of 976,000 France links (2.4%) exactly in that roughly 50/50 band. France has no labels, so this is tested on the **public leaderboard** as v2, and the better of v1/v2 becomes final.
+
+### 4.4 Submissions
+
+| Version | Rule | Links | S1 with a match | Validator | Leaderboard |
+|---|---|---|---|---|---|
+| v1 | t = 0.50 everywhere | 6,138,289 | 1,651,318 / 1,732,544 | PASS (`--check-ids`) | pending |
+| v2 | t = 0.50, France 0.60 | about 6,115,000 | about 1,650,500 | PASS | pending |
+
+Files are in the GitHub **Releases** (v1, v2) and the log is `submissions/log.tsv`.
+
+### 4.5 Bugs caught before any upload
+- **Windows line endings.** pandas on Windows wrote `
+`. The official validator hides it (Python text mode strips ``), but a Linux scorer would read the header as `matched_entity_ids` and the last ID of every row as `S3-…`, a non-existent ID. That would mean either rejection or about 1.65M wrong links. Fixed with `lineterminator="
+"`, and checked that the file has 0 `` bytes.
+- **Candidate file too big for the official validator on 8 GB RAM** (99.3M IDs in Python sets). `src/check_candidates.py` streams the file line by line with the same rules: PASS, and every final match is inside its candidate list.
 
 ## 5. Engineering notes
-- **Compute:** SageMaker notebook quota for large instances was 0 on the account (Free plan, then Paid plan with the increase pending). So the pipeline was made **streaming**: normalization writes parquet in parts, and test prediction processes one country and one 300k chunk at a time. It runs unchanged on a laptop or SageMaker (folders set by the `ER_RAW`, `ER_DATA` and `ER_OUT` env vars).
-- **Reproducibility:** sampling uses a hash of the ID (not random state), so the same records are picked every run.
+- **Compute:** SageMaker notebook quota for large instances was 0 on the account (Free plan, then Paid plan with the increase pending). So the pipeline was made **streaming**:
+  - Normalization writes parquet in parts.
+  - Test prediction processes one country and one chunk at a time, and saves every scored chunk. An interrupted run resumes where it stopped.
+  - Candidate lists are built in two passes over hash buckets.
+  - It runs unchanged on a laptop or SageMaker (folders set by `ER_RAW`, `ER_DATA`, `ER_OUT`).
+- **Reproducibility:** sampling uses a hash of the ID (not random state), so the same records are picked every run. `submit` reproduces v1 byte for byte.
 - **Self-checks:**
   - `python -m src.normalize --check`
   - `python -m src.features`
   - `python -m src.evaluate` (includes the README's worked F0.5 example, 0.714)
+  - `python -m src.check_candidates`
 
-## 6. Next steps
-- Error analysis of the v1 holdout: false merges vs misses, by country and source.
-- Phonetic `g→j` (`energy` vs `enrji`).
-- France spot-check of the top-scored pairs; possibly a stricter France threshold.
-- `candidate_pairs.tsv`, the filled documentation template, and the final zip.
+## 6. Beyond what the problem statement asked (and why it matters)
+- **Verified the one-S1-per-record rule** from the ground truth (0 exceptions in 7.64M links) and built the decision rule on it. This removes a whole class of false merges.
+- **Realistic validation:** a full S1 index plus sampled queries, and a **sampling-corrected** F0.5, so the threshold isn't biased loose. Uncorrected it would have been 0.20 instead of 0.50.
+- **Macro F0.5 including singletons** is re-implemented exactly (`src/evaluate.py`) and used for every decision.
+- **France handled without labels:** language-independent features, no country one-hot, a spot-check, and a leaderboard A/B for a France-only threshold.
+- **Negative results recorded** (4.2), so every choice in the final pipeline is backed by a measured comparison.
+- **Format safety:** the line-ending bug, and a streaming checker for the 1.3 GB candidate file.
+
+## 7. Next steps
+- Upload v1, then v2. Keep the better leaderboard score as the final choice and log both in `submissions/log.tsv`.
+- Final zip: `output/` (both TSVs), `code/business_entity_resolution/{src, README.md, requirements.txt}`, and the filled `Documentation_template.md`.

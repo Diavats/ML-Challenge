@@ -58,18 +58,16 @@ def train(sample):
     H = set(sampled[pd.util.hash_array(sampled.values) % 5 == 0])
     true_s1 = df["id"].map(pairs.set_index("id")["s1"])
     hold_q = true_s1.isin(H) | (~true_s1.isin(set(sampled)) & (pd.util.hash_array(df["id"].values) % 5 == 0))
-    # Weights: records that belong to NON-sampled businesses (other S1s' records, decoys) were
-    # kept at only `sample` of their real rate, but on test they are all there. They are the
-    # "looks similar but isn't" cases, so weight each one 1/sample to match the real test mix.
-    df["w"] = np.where(true_s1.isin(set(sampled)), 1.0, 1.0 / sample)
+    # (Tried: weighting decoy-type records x20 to match the test mix. Corrected F0.5 fell
+    #  0.9725 -> 0.9684, so it was dropped. The threshold tuning already handles precision.)
     tr, ho = df[~hold_q & ~df["s1"].isin(H)], df[hold_q].copy()
     print(f"pairs: train {len(tr):,} (pos {tr['y'].mean():.3f}), holdout {len(ho):,}")
 
     model = lgb.train(
         dict(objective="binary", learning_rate=0.05, num_leaves=127, min_data_in_leaf=100,
              feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, verbose=-1),
-        lgb.Dataset(tr[ALL_FEATS], tr["y"], weight=tr["w"]), num_boost_round=2000,
-        valid_sets=[lgb.Dataset(ho[ALL_FEATS], ho["y"], weight=ho["w"])],
+        lgb.Dataset(tr[ALL_FEATS], tr["y"]), num_boost_round=2000,
+        valid_sets=[lgb.Dataset(ho[ALL_FEATS], ho["y"])],
         callbacks=[lgb.early_stopping(50), lgb.log_evaluation(100)])
     ho["p"] = model.predict(ho[ALL_FEATS])
     imp = pd.Series(model.feature_importance("gain"), ALL_FEATS).sort_values(ascending=False)
@@ -163,14 +161,18 @@ def predict():
     submit(float((DATA / "threshold.txt").read_text()))
 
 
-def submit(t):
-    """matching_results.tsv from the saved best-per-record table at threshold t (no recompute)."""
-    s1_ids = read_norm("test", 1, ["id"])["id"]
+def submit(t, per_country=None):
+    """matching_results.tsv from the saved best-per-record table (no recompute).
+    t = threshold for every country; per_country = {"France": 0.6} overrides it for some."""
+    s1 = read_norm("test", 1, ["id", "country"])
+    s1_ids = s1["id"]
     best = pd.read_parquet(DATA / "best_test.parquet")
-    best = best[best["p"] >= t]
+    # each link gets the threshold of its S1's country (default t)
+    need = best["s1"].map(s1.set_index("id")["country"]).map(per_country or {}).fillna(t)
+    best = best[best["p"] >= need]
     OUT.mkdir(parents=True, exist_ok=True)
     write_list(best, s1_ids, "matched_entity_ids", OUT / "matching_results.tsv")
-    print(f"threshold {t}: {len(best):,} links, {best['s1'].nunique():,} of {len(s1_ids):,} S1 "
+    print(f"threshold {t} {per_country or ''}: {len(best):,} links, {best['s1'].nunique():,} of {len(s1_ids):,} S1 "
           f"have a match -> {OUT / 'matching_results.tsv'}")
 
 
@@ -216,6 +218,8 @@ if __name__ == "__main__":
     elif cmd == "predict":
         predict()
     elif cmd == "submit":
-        submit(float(sys.argv[2]))
+        # e.g.  submit 0.5            or   submit 0.5 France=0.6
+        extra = dict(a.split("=") for a in sys.argv[3:])
+        submit(float(sys.argv[2]), {c: float(v) for c, v in extra.items()})
     elif cmd == "candidates":
         candidates()
